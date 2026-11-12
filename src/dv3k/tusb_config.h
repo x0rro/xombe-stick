@@ -1,0 +1,15 @@
+#ifndef DV3K_TUSB_CONFIG_H
+#define DV3K_TUSB_CONFIG_H
+
+#define CFG_TUSB_RHPORT0_MODE  OPT_MODE_DEVICE
+#define CFG_TUD_ENDPOINT0_SIZE 64
+#ifdef DV3K_FTDI
+#define CFG_TUD_CDC            0
+#else
+#define CFG_TUD_CDC            1
+#endif
+#define CFG_TUD_CDC_RX_BUFSIZE 1024
+#define CFG_TUD_CDC_TX_BUFSIZE 1024
+#define CFG_TUD_CDC_EP_BUFSIZE 512
+
+#endif

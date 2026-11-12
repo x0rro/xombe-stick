@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    container: docker.io/library/debian@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh release/deps.sh
+      - name: build the four firmwares
+        run: |
+          mkdir dist
+          sh release/bins.sh "g$(echo "$GITHUB_SHA" | cut -c1-12)" dist
+      - name: no warnings
+        run: |
+          if grep -i warning /build.log | grep -vE '^lto-wrapper: warning: using serial compilation of|^/usr/include/c\+\+/|^CMake Warning at .*/Findpicotool\.cmake:'; then
+            exit 1
+          fi

@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: docker.io/library/debian@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
+    steps:
+      - name: checkout without git, for the locked packages
+        uses: actions/checkout@v4
+      - run: sh release/deps.sh
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: checkout with git
+        uses: actions/checkout@v4
+      - name: tag matches version
+        run: |
+          ver=$(sed -n 's/^project(xombe_stick VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)
+          test "${GITHUB_REF_NAME#v}" = "$ver"
+      - run: mkdir dist && release/tarball.sh dist
+      - run: release/bins.sh "$GITHUB_REF_NAME" dist > dist/dmr.sums
+      - name: no firmware in the artifact
+        run: test -z "$(find dist -name '*.uf2')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: out
+      - run: mv out/dmr.sums dmr.sums
+      - name: no firmware ships
+        run: test -z "$(find out -name '*.uf2')"
+      - run: cd out && sha256sum -- xombe-stick-* | LC_ALL=C sort -k2 > SHA256SUMS
+      - name: sums match the tag
+        run: |
+          git fetch -q --depth=1 origin "+$GITHUB_REF:$GITHUB_REF"
+          git for-each-ref --format='%(contents)' "$GITHUB_REF" | grep -E '^[0-9a-f]{64}  ' > tag-sums
+          cat out/SHA256SUMS dmr.sums | diff tag-sums -
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/xombe-stick-*
+      - name: draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          awk -v h="## $ver" '$0 == h { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "xombe-stick $ver" --notes-file notes.md out/xombe-stick-* out/SHA256SUMS
